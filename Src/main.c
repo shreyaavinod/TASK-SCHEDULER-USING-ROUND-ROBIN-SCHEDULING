@@ -24,6 +24,8 @@ void task_2(void);
 void task_3(void);
 void task_4(void);
 
+void systick_init(uint32_t delay);
+
 //stack calculation macros
 #define TASK_STACK_SIZE    1024U
 #define SCHED_STACK_SIZE   1024U
@@ -40,11 +42,18 @@ void task_4(void);
 #define T4_STACK_START     T3_STACK_END
 #define T4_STACK_END       ((T4_STACK_START)-(1024))
 
+//systick config
+#define HSI_CLK 			16000000U
+#define SYSTICK_FREQ		HSI_CLK
+
+
 
 
 int main(void)
 {
 
+	//start scheduler
+	systick_init(1000U);
     /* Loop forever */
 	for(;;);
 }
@@ -83,3 +92,29 @@ void task_4(void)
 		}
 }
 
+//configure and enable SYSTICK TIMER
+void systick_init(uint32_t delay_freq){
+
+	//1. calculate reload value
+	uint32_t count_val= SYSTICK_FREQ/delay_freq;
+
+	//LOAD COUNT VALUE IN RELOAD REGISTER
+	uint32_t *SYST_RVR = (uint32_t *)0xE000E014U;
+	*SYST_RVR &= ~(0xFFFFFF);
+	*SYST_RVR |= (count_val-1);
+	//clear CVR
+	uint32_t *SYST_CVR =(uint32_t*)0xE000E018U;
+	*SYST_CVR =0;
+
+	//SYST_CSR settings
+	uint32_t *SYST_CSR = (uint32_t *) 0xE000E010U;
+	*SYST_CSR |=(0x1<<2);
+	*SYST_CSR |=(0x1<<1);
+	*SYST_CSR |=(0x1<<0);
+
+}
+
+void SysTick_Handler(void)
+{
+	printf("inside systick handler \r\n");
+}
