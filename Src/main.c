@@ -29,6 +29,10 @@ void scheduler_stackl_init(uint32_t stackstart);
 void task_stack_init(void);
 void switch_to_psp(void);
 void enable_processor_faults(void);
+uint32_t get_psp(void);
+void update_current_task(void);
+void save_psp(uint32_t pspval);
+
 //stack calculation macros
 #define TASK_STACK_SIZE    1024U
 #define SCHED_STACK_SIZE   1024U
@@ -174,6 +178,15 @@ uint32_t get_psp(void)
 {
 	return psp_of_task[current_task];
 }
+void save_psp(uint32_t pspval)
+{
+	psp_of_task[current_task]=pspval;
+}
+void update_current_task(void)
+{
+	current_task++;
+	current_task %= 4;
+}
 
 //=========================================================
 __attribute__((naked)) void switch_to_psp(void)
@@ -187,6 +200,7 @@ __attribute__((naked)) void switch_to_psp(void)
 
 	 __asm volatile("MOV R0,#0x02");
 	 __asm volatile ("MSR CONTROL,R0");
+	 __asm volatile("ISB");
 	 __asm volatile ("BX LR");
 
 
@@ -201,9 +215,26 @@ void enable_processor_faults(void)
 	*SHCSR |= (0x1<<16);
 
 }
-void SysTick_Handler(void)
+__attribute__((naked))void SysTick_Handler(void)
 {
-	printf("inside systick handler \r\n");
+
+	//get the psp store the remaining context
+	__asm volatile("MRS R0,PSP");
+	__asm volatile("STMDB R0!, {R4-R11}");
+	//save the psp value in psp_of_task[current task]
+	__asm volatile("PUSH {LR}");
+	__asm volatile("BL save_psp");
+	//=======================================
+	//RETRIEVING CONTEXT
+	__asm volatile("BL update_current_task");
+	__asm volatile("BL get_psp");
+
+	__asm volatile("LDM R0!,{R4-R11}");
+
+	__asm volatile("MSR PSP,R0");
+	__asm volatile("POP {LR}");
+	__asm volatile ("BX LR");
+
 }
 void MemManage_Handler(void)
 {
