@@ -25,7 +25,10 @@ void task_3(void);
 void task_4(void);
 
 void systick_init(uint32_t delay);
-
+void scheduler_stackl_init(uint32_t stackstart);
+void task_stack_init(void);
+void switch_to_psp(void);
+void enable_processor_faults(void);
 //stack calculation macros
 #define TASK_STACK_SIZE    1024U
 #define SCHED_STACK_SIZE   1024U
@@ -41,19 +44,34 @@ void systick_init(uint32_t delay);
 #define T3_STACK_END       ((T3_STACK_START)-(1024))
 #define T4_STACK_START     T3_STACK_END
 #define T4_STACK_END       ((T4_STACK_START)-(1024))
+#define SCHEDULER_STACK_START T4_STACK_END
+
 
 //systick config
 #define HSI_CLK 			16000000U
 #define SYSTICK_FREQ		HSI_CLK
-
-
-
-
+//DUMMY SF
+# define DUMMY_XPSR         0x01000000U
+//PSP initialisation
+uint32_t psp_of_task[4]={T1_STACK_START,T2_STACK_START, T3_STACK_START,T4_STACK_START};
+uint32_t task_address[4]={(uint32_t)task_1,(uint32_t)task_2,(uint32_t)task_3,(uint32_t)task_4};
+uint32_t current_task=0;
 int main(void)
 {
 
+	enable_processor_faults();
+	//initialise stack pointer of stack - mso give scgheduler starting address
+	scheduler_stackl_init(SCHEDULER_STACK_START);
+
+	//INITIALISE THE STACK OF TASKS
+	task_stack_init();
+
 	//start scheduler
 	systick_init(1000U);
+	//switch to psp before invoking task 1
+	switch_to_psp();
+
+	task_1(); //calling the first task
     /* Loop forever */
 	for(;;);
 }
@@ -114,7 +132,94 @@ void systick_init(uint32_t delay_freq){
 
 }
 
+
+__attribute((naked))void scheduler_stackl_init(uint32_t stackstart){
+
+	__asm volatile ("MSR MSP,R0 \n"
+			"BX LR");
+
+}
+//=============================================================================================================
+void task_stack_init(void)
+{
+	uint32_t * pPSP;
+	for (int i=0;i<4;i++)
+	{
+		pPSP= (uint32_t *)psp_of_task[i];
+		//xpsr initialise
+		pPSP--;
+		*pPSP=DUMMY_XPSR;
+
+		pPSP--;
+		*pPSP=task_address[i];
+
+		pPSP--;
+	    *pPSP=0xFFFFFFFD;
+
+	    for (int j=0;j<13;j++)
+	    {
+			pPSP--;
+		    *pPSP=0;
+	    }
+
+	    psp_of_task[i]=(uint32_t)pPSP;
+
+
+	}
+
+
+}
+
+uint32_t get_psp(void)
+{
+	return psp_of_task[current_task];
+}
+
+//=========================================================
+__attribute__((naked)) void switch_to_psp(void)
+{
+	//initialise the psp and then change SPSEL bit
+	 __asm volatile("PUSH {LR}");
+	 __asm volatile("BL get_psp");
+	 __asm volatile("MSR PSP,R0");
+	 __asm volatile("POP {LR}");
+	//CHANGE THE SPSEL BIT
+
+	 __asm volatile("MOV R0,#0x02");
+	 __asm volatile ("MSR CONTROL,R0");
+	 __asm volatile ("BX LR");
+
+
+}
+//===========================================================
+void enable_processor_faults(void)
+{
+	uint32_t*SHCSR = (uint32_t *) 0xE000ED24U;
+	//enable faults
+	*SHCSR |= (0x1<<18);
+	*SHCSR |= (0x1<<17);
+	*SHCSR |= (0x1<<16);
+
+}
 void SysTick_Handler(void)
 {
 	printf("inside systick handler \r\n");
+}
+void MemManage_Handler(void)
+{
+	printf("inside MemManage handler \r\n");
+	while(1);
+
+}
+void BusFault_Handler(void)
+{
+	printf("inside Busfault handler \r\n");
+	while(1);
+
+}
+void UsageFault_Handler (void)
+{
+	printf("inside usagefault handler \r\n");
+	while(1);
+
 }
